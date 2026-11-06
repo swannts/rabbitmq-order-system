@@ -6,3 +6,8 @@ target/
 .env.*
 !.env.*.example
 !.env.example
+**/vendor/
+**/node_modules/
+**/dist/
+**/storage/logs/*.log
+**/composer.phar

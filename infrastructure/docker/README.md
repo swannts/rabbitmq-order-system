@@ -23,7 +23,7 @@ Local credentials are for development only.
 
 Containers on the Compose network connect using service DNS names: Order → `order-db:5432`, Payment → `payment-db:3306`, Inventory → `inventory-db:27017`, and History → `history-db:8123` (HTTP) or `history-db:9000` (native protocol). The brokers are `rabbitmq:5672` and `kafka:9092` from other containers. Use `localhost` ports only from applications running directly on your host.
 
-The app containers have their own `compose.services.yaml`. Their Dockerfiles will be added with the application implementations. Once those exist, start the full stack with:
+The app containers have their own `compose.services.yaml`, with one Dockerfile per service. Start the full local stack with:
 
 ```bash
 docker compose -p order-platform-local --profile apps \
@@ -59,4 +59,4 @@ docker compose --env-file infrastructure/docker/.env.production \
 
 The production Compose file runs application images only. It expects managed PostgreSQL for orders, MySQL for payments, MongoDB for inventory, ClickHouse for history, RabbitMQ over TLS, and Kafka using SASL/TLS. It deliberately does not run single-node brokers or databases as production infrastructure. Put a TLS reverse proxy or platform ingress in front of the order service; its host port is bound to loopback.
 
-This is a single-host deployment template, not a highly available production platform. For production availability, use an orchestrator or managed container platform, multiple application replicas, managed databases/brokers, secret injection, image scanning/signing, and centralized health/metrics/logging. Build files and application-specific health checks will be added with the service implementations.
+This is a single-host deployment template, not a highly available production platform. For production availability, use an orchestrator or managed container platform, multiple application replicas, managed databases/brokers, secret injection, image scanning/signing, and centralized health/metrics/logging. Application Dockerfiles are starter versions; review runtime and security settings before production use.

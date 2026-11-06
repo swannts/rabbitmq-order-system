@@ -1,0 +1,24 @@
+# Go build output and test artifacts
+/bin/
+/build/
+/coverage/
+*.test
+*.out
+*.prof
+*.cover
+
+# Local binaries (keep source and go.sum tracked)
+/order-history-service
+/order-history-service.exe
+
+# Local configuration and runtime files
+.env
+.env.*
+!.env.example
+*.log
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
