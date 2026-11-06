@@ -1,0 +1,91 @@
+name: order-platform-local
+
+services:
+  order-service:
+    profiles: ["apps"]
+    build:
+      context: ../../services/order-service-spring-boot
+      dockerfile: Dockerfile
+    init: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+      SPRING_DATASOURCE_URL: jdbc:postgresql://order-db:5432/orders
+      SPRING_DATASOURCE_USERNAME: orders
+      SPRING_DATASOURCE_PASSWORD: orders_dev
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: learner
+      SPRING_RABBITMQ_PASSWORD: learner
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    depends_on:
+      order-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
+  payment-service:
+    profiles: ["apps"]
+    build:
+      context: ../../services/payment-service-laravel
+      dockerfile: Dockerfile
+    init: true
+    restart: unless-stopped
+    environment:
+      APP_ENV: local
+      APP_DEBUG: "true"
+      DB_CONNECTION: mysql
+      DB_HOST: payment-db
+      DB_PORT: 3306
+      DB_DATABASE: payments
+      DB_USERNAME: payments
+      DB_PASSWORD: payments_dev
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: learner
+      RABBITMQ_PASSWORD: learner
+      RABBITMQ_SCHEME: amqp
+    depends_on:
+      payment-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  inventory-service:
+    profiles: ["apps"]
+    build:
+      context: ../../services/inventory-service-nestjs
+      dockerfile: Dockerfile
+    init: true
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      MONGODB_URI: mongodb://inventory_admin:inventory_dev@inventory-db:27017/inventory?authSource=admin
+      RABBITMQ_URL: amqp://learner:learner@rabbitmq:5672
+    depends_on:
+      inventory-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  order-history-service:
+    profiles: ["apps"]
+    build:
+      context: ../../services/order-history-service-go
+      dockerfile: Dockerfile
+    init: true
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_URL: http://history-db:8123
+      CLICKHOUSE_USER: history_app
+      CLICKHOUSE_PASSWORD: history_dev
+      KAFKA_BROKERS: kafka:9092
+    depends_on:
+      history-db:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy

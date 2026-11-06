@@ -1,0 +1,81 @@
+name: order-platform-local
+
+services:
+  order-db:
+    image: postgres:18.6
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: orders
+      POSTGRES_USER: orders
+      POSTGRES_PASSWORD: orders_dev
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - order_db_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  payment-db:
+    image: mysql:8.4.13
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: payments
+      MYSQL_USER: payments
+      MYSQL_PASSWORD: payments_dev
+      MYSQL_ROOT_PASSWORD: local_root_only
+    ports:
+      - "127.0.0.1:3306:3306"
+    volumes:
+      - payment_db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p\"$${MYSQL_ROOT_PASSWORD}\" --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  inventory-db:
+    image: mongo:8.0.32
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_DATABASE: inventory
+      MONGO_INITDB_ROOT_USERNAME: inventory_admin
+      MONGO_INITDB_ROOT_PASSWORD: inventory_dev
+    ports:
+      - "127.0.0.1:27017:27017"
+    volumes:
+      - inventory_db_data:/data/db
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval 'db.adminCommand(\"ping\").ok' | grep 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  history-db:
+    image: clickhouse/clickhouse-server:26.8.36
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_DB: order_history
+      CLICKHOUSE_USER: history_app
+      CLICKHOUSE_PASSWORD: history_dev
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    ports:
+      - "127.0.0.1:8123:8123"
+      - "127.0.0.1:9000:9000"
+    volumes:
+      - history_db_data:/var/lib/clickhouse
+      - history_db_logs:/var/log/clickhouse-server
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --query 'SELECT 1' --user \"$${CLICKHOUSE_USER}\" --password \"$${CLICKHOUSE_PASSWORD}\" | grep 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  order_db_data:
+  payment_db_data:
+  inventory_db_data:
+  history_db_data:
+  history_db_logs:

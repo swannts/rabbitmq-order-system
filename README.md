@@ -6,12 +6,14 @@ Learning project for microservices, RabbitMQ, and Kafka using four different ser
 
 | Service | Stack | Responsibility | Messaging role |
 |---|---|---|---|
-| `order-service-spring-boot` | Java / Spring Boot | Accept orders and manage order state | Publishes work to RabbitMQ and business events to Kafka |
-| `payment-service-laravel` | PHP / Laravel | Authorize or reject payments | RabbitMQ worker |
-| `inventory-service-nestjs` | TypeScript / NestJS | Reserve or release stock | RabbitMQ worker |
-| `order-history-service-go` | Go | Build a queryable order timeline | Kafka consumer |
+| `order-service-spring-boot` | Java / Spring Boot / PostgreSQL | Accept orders and manage order state | Publishes work to RabbitMQ and business events to Kafka |
+| `payment-service-laravel` | PHP / Laravel / MySQL | Authorize or reject payments | RabbitMQ worker |
+| `inventory-service-nestjs` | TypeScript / NestJS / MongoDB | Reserve or release stock | RabbitMQ worker |
+| `order-history-service-go` | Go / ClickHouse | Build a queryable event history and analytics view | Kafka consumer |
 
 Each service owns its data. Services must not read or write another service's tables directly. `contracts/` is for versioned API and event schemas, not shared business logic.
+
+The services deliberately use different data stores: PostgreSQL for transactional orders, MySQL for payments, MongoDB for inventory documents, and ClickHouse for the Kafka-fed history/analytics read model. ClickHouse is for analytical/event-history queries here; it is not the source of truth for orders or payments.
 
 ## Layout
 
