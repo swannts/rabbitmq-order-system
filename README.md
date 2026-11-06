@@ -1,21 +1,34 @@
 # Order Platform Microservices
 
-Learning project for Spring Boot microservices, RabbitMQ, and Kafka. This commit establishes the repository layout; service implementations will be added in stages.
+Learning project for microservices, RabbitMQ, and Kafka using four different service stacks. The repository currently contains the folder skeleton; app implementations and build manifests will be added service by service.
 
-## Services
+## Service and technology map
 
-- `order-service` owns order creation and status.
-- `payment-service` owns payment processing.
-- `inventory-service` owns stock reservations.
-- `order-history-service` consumes Kafka events to build a read-only order timeline.
+| Service | Stack | Responsibility | Messaging role |
+|---|---|---|---|
+| `order-service-spring-boot` | Java / Spring Boot | Accept orders and manage order state | Publishes work to RabbitMQ and business events to Kafka |
+| `payment-service-laravel` | PHP / Laravel | Authorize or reject payments | RabbitMQ worker |
+| `inventory-service-nestjs` | TypeScript / NestJS | Reserve or release stock | RabbitMQ worker |
+| `order-history-service-go` | Go | Build a queryable order timeline | Kafka consumer |
 
-Each service is intended to be an independently buildable and deployable Spring Boot application with its own data boundary. Do not share database tables between services. Keep business rules in `domain`, use cases in `application`, transport adapters in `api`, and broker/database integrations in `infrastructure`.
+Each service owns its data. Services must not read or write another service's tables directly. `contracts/` is for versioned API and event schemas, not shared business logic.
 
-## Repository map
+## Layout
 
-- `services/` — independently deployable applications.
-- `infrastructure/` — local Docker and broker configuration.
-- `contracts/` — versioned HTTP and event contracts; do not put shared business logic here.
-- `docs/architecture/` — diagrams and design decisions.
+```text
+services/
+  order-service-spring-boot/       # Maven-style src/main and src/test
+  payment-service-laravel/         # Laravel app, routes, database, tests
+  inventory-service-nestjs/        # NestJS src modules and e2e tests
+  order-history-service-go/        # Go cmd and internal packages
+infrastructure/
+  docker/
+  rabbitmq/
+  kafka/
+contracts/
+  openapi/
+  asyncapi/
+docs/architecture/
+```
 
-Planned message roles: RabbitMQ carries payment and inventory work commands; Kafka carries business events for history and analytics.
+The initial workflow will use RabbitMQ for payment and inventory commands. Kafka will carry business events such as `OrderPlaced`, `PaymentAuthorized`, and `InventoryReserved` to history and analytics consumers.
