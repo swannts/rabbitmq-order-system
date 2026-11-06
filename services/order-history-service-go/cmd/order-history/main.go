@@ -12,22 +12,29 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
 
 	clickhouse "github.com/ClickHouse/clickhouse-go/v2"
+	"github.com/google/uuid"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/sasl/plain"
 )
 
 type OrderCreatedEvent struct {
-	OrderID      string    `json:"orderId"`
-	CustomerName string    `json:"customerName"`
-	ItemName     string    `json:"itemName"`
-	Quantity     uint32    `json:"quantity"`
-	CreatedAt    time.Time `json:"createdAt"`
+	EventType     string    `json:"eventType"`
+	SchemaVersion uint16    `json:"schemaVersion"`
+	EventID       string    `json:"eventId"`
+	OrderID       string    `json:"orderId"`
+	CustomerName  string    `json:"customerName"`
+	ItemName      string    `json:"itemName"`
+	Quantity      uint32    `json:"quantity"`
+	Status        string    `json:"status"`
+	OccurredAt    time.Time `json:"occurredAt"`
+	CreatedAt     time.Time `json:"createdAt"`
 }
 
 var httpRequests atomic.Uint64
@@ -73,6 +80,12 @@ func main() {
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
+	})
+	mux.HandleFunc("GET /api/v1/order-history", func(w http.ResponseWriter, r *http.Request) {
+		listOrderHistory(w, r, db)
+	})
+	mux.HandleFunc("GET /api/v1/order-history/{orderId}", func(w http.ResponseWriter, r *http.Request) {
+		getOrderHistory(w, r, db)
 	})
 	mux.HandleFunc("GET /metrics", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
@@ -126,13 +139,17 @@ func openClickHouse(ctx context.Context) (*sql.DB, error) {
 }
 
 func createSchema(ctx context.Context, db *sql.DB) error {
-	_, err := db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS order_events (
+	_, err := db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS order_events_v2 (
+		event_id UUID,
+		event_type LowCardinality(String),
+		schema_version UInt16,
 		order_id UUID,
 		customer_name String,
 		item_name String,
 		quantity UInt32,
-		created_at DateTime64(3, 'UTC')
-	) ENGINE = MergeTree ORDER BY (order_id, created_at)`)
+		status LowCardinality(String),
+		occurred_at DateTime64(3, 'UTC')
+	) ENGINE = ReplacingMergeTree ORDER BY (order_id, occurred_at, event_id)`)
 	return err
 }
 
@@ -167,11 +184,46 @@ func consumeOrders(ctx context.Context, logger *slog.Logger, consumer *kgo.Clien
 			if err := json.Unmarshal(record.Value, &event); err != nil {
 				orderEventFailures.Add(1)
 				logger.Error("invalid order event", "error", err, "offset", record.Offset)
+				deadLetter := &kgo.Record{Topic: "order-events.dlq", Key: record.Key, Value: record.Value, Headers: append(record.Headers, kgo.RecordHeader{Key: "source-topic", Value: []byte(record.Topic)})}
+				if produceErr := consumer.ProduceSync(ctx, deadLetter).FirstErr(); produceErr != nil {
+					logger.Error("dead-letter invalid Kafka event", "error", produceErr, "offset", record.Offset)
+					return
+				}
+				if commitErr := consumer.CommitRecords(ctx, record); commitErr != nil {
+					logger.Error("commit dead-lettered Kafka offset", "error", commitErr, "offset", record.Offset)
+				}
+				return
+			}
+			if event.EventID == "" {
+				event.EventID = uuid.NewSHA1(uuid.NameSpaceOID, []byte(fmt.Sprintf("%s:%d:%d", record.Topic, record.Partition, record.Offset))).String()
+			}
+			if event.EventType == "" {
+				event.EventType = "order.created"
+			}
+			if event.SchemaVersion == 0 {
+				event.SchemaVersion = 1
+			}
+			if event.OccurredAt.IsZero() {
+				event.OccurredAt = event.CreatedAt
+			}
+			if event.Status == "" {
+				event.Status = "PENDING"
+			}
+			if event.OrderID == "" || event.OccurredAt.IsZero() {
+				orderEventFailures.Add(1)
+				logger.Error("invalid order event fields", "offset", record.Offset)
+				if err := deadLetterRecord(ctx, consumer, record); err != nil {
+					logger.Error("dead-letter invalid event fields", "error", err, "offset", record.Offset)
+					return
+				}
+				if err := consumer.CommitRecords(ctx, record); err != nil {
+					logger.Error("commit dead-lettered offset", "error", err, "offset", record.Offset)
+				}
 				return
 			}
 			if _, err := db.ExecContext(ctx,
-				"INSERT INTO order_events (order_id, customer_name, item_name, quantity, created_at) VALUES (?, ?, ?, ?, ?)",
-				event.OrderID, event.CustomerName, event.ItemName, event.Quantity, event.CreatedAt,
+				"INSERT INTO order_events_v2 (event_id, event_type, schema_version, order_id, customer_name, item_name, quantity, status, occurred_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+				event.EventID, event.EventType, event.SchemaVersion, event.OrderID, event.CustomerName, event.ItemName, event.Quantity, event.Status, event.OccurredAt,
 			); err != nil {
 				orderEventFailures.Add(1)
 				logger.Error("persist order event", "error", err, "order_id", event.OrderID)
@@ -186,6 +238,131 @@ func consumeOrders(ctx context.Context, logger *slog.Logger, consumer *kgo.Clien
 			orderEventsProcessed.Add(1)
 		})
 	}
+}
+
+func deadLetterRecord(ctx context.Context, producer *kgo.Client, source *kgo.Record) error {
+	deadLetter := &kgo.Record{Topic: "order-events.dlq", Key: source.Key, Value: source.Value,
+		Headers: append(source.Headers, kgo.RecordHeader{Key: "source-topic", Value: []byte(source.Topic)})}
+	return producer.ProduceSync(ctx, deadLetter).FirstErr()
+}
+
+type historyEvent struct {
+	EventID       string    `json:"eventId"`
+	EventType     string    `json:"eventType"`
+	SchemaVersion uint16    `json:"schemaVersion"`
+	OrderID       string    `json:"orderId"`
+	CustomerName  string    `json:"customerName"`
+	ItemName      string    `json:"itemName"`
+	Quantity      uint32    `json:"quantity"`
+	Status        string    `json:"status"`
+	OccurredAt    time.Time `json:"occurredAt"`
+}
+
+func getOrderHistory(w http.ResponseWriter, r *http.Request, db *sql.DB) {
+	orderID := r.PathValue("orderId")
+	if _, err := uuid.Parse(orderID); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "orderId must be a UUID")
+		return
+	}
+	items, err := queryHistory(r.Context(), db, orderID, "", "", 100, 0)
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "Could not read order history")
+		return
+	}
+	if len(items) == 0 {
+		writeAPIError(w, http.StatusNotFound, "Order history not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+func listOrderHistory(w http.ResponseWriter, r *http.Request, db *sql.DB) {
+	query := r.URL.Query()
+	orderID := query.Get("orderId")
+	if orderID != "" {
+		if _, err := uuid.Parse(orderID); err != nil {
+			writeAPIError(w, http.StatusBadRequest, "orderId must be a UUID")
+			return
+		}
+	}
+	from, until := query.Get("from"), query.Get("until")
+	for _, value := range []string{from, until} {
+		if value != "" {
+			if _, err := time.Parse(time.RFC3339, value); err != nil {
+				writeAPIError(w, http.StatusBadRequest, "from and until must use RFC3339 timestamps")
+				return
+			}
+		}
+	}
+	limit := 50
+	if value := query.Get("limit"); value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err != nil || parsed < 1 {
+			writeAPIError(w, http.StatusBadRequest, "limit must be between 1 and 100")
+			return
+		}
+		limit = min(parsed, 100)
+	}
+	offset := 0
+	if value := query.Get("offset"); value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err != nil || parsed < 0 {
+			writeAPIError(w, http.StatusBadRequest, "offset must be a non-negative integer")
+			return
+		}
+		offset = parsed
+	}
+	items, err := queryHistory(r.Context(), db, orderID, from, until, limit, offset)
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "Could not read order history")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items, "limit": limit, "offset": offset})
+}
+
+func queryHistory(ctx context.Context, db *sql.DB, orderID, from, until string, limit, offset int) ([]historyEvent, error) {
+	statement := "SELECT event_id, event_type, schema_version, order_id, customer_name, item_name, quantity, status, occurred_at FROM order_events_v2 FINAL WHERE 1 = 1"
+	args := make([]any, 0, 5)
+	if orderID != "" {
+		statement += " AND order_id = ?"
+		args = append(args, orderID)
+	}
+	if from != "" {
+		statement += " AND occurred_at >= ?"
+		args = append(args, from)
+	}
+	if until != "" {
+		statement += " AND occurred_at <= ?"
+		args = append(args, until)
+	}
+	statement += " ORDER BY occurred_at ASC LIMIT ? OFFSET ?"
+	args = append(args, limit, offset)
+	rows, err := db.QueryContext(ctx, statement, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]historyEvent, 0)
+	for rows.Next() {
+		var item historyEvent
+		if err := rows.Scan(&item.EventID, &item.EventType, &item.SchemaVersion, &item.OrderID, &item.CustomerName, &item.ItemName, &item.Quantity, &item.Status, &item.OccurredAt); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func writeJSON(w http.ResponseWriter, status int, value any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(value)
+}
+
+func writeAPIError(w http.ResponseWriter, status int, detail string) {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]any{"type": "about:blank", "title": http.StatusText(status), "status": status, "detail": detail})
 }
 
 func countRequests(next http.Handler) http.Handler {

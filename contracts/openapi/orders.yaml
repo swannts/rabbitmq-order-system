@@ -1,0 +1,118 @@
+openapi: 3.1.0
+info:
+  title: Order Service API
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080
+paths:
+  /api/v1/orders:
+    post:
+      operationId: createOrder
+      summary: Accept a new order for asynchronous processing
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: Client-generated key, unique for one create-order intent.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrderRequest'
+            example:
+              customerName: Ada Lovelace
+              itemName: Industrial sensor
+              quantity: 2
+      responses:
+        '202':
+          description: Order accepted for asynchronous processing
+          headers:
+            Location:
+              schema: { type: string, format: uri }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '409':
+          description: Idempotency key was reused with a different request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+    get:
+      operationId: listOrders
+      summary: List orders, newest first
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 0, default: 0 }
+        - name: size
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        '200':
+          description: Paginated orders
+  /api/v1/orders/{orderId}:
+    get:
+      operationId: getOrder
+      summary: Get the current order state
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Order found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '404':
+          $ref: '#/components/responses/Problem'
+components:
+  schemas:
+    CreateOrderRequest:
+      type: object
+      required: [customerName, itemName, quantity]
+      properties:
+        customerName: { type: string, minLength: 1, maxLength: 160 }
+        itemName: { type: string, minLength: 1, maxLength: 160 }
+        quantity: { type: integer, minimum: 1 }
+    Order:
+      type: object
+      required: [orderId, customerName, itemName, quantity, status, createdAt, self]
+      properties:
+        orderId: { type: string, format: uuid }
+        customerName: { type: string }
+        itemName: { type: string }
+        quantity: { type: integer }
+        status: { type: string, enum: [PENDING, CONFIRMED, REJECTED] }
+        inventoryStatus: { type: [string, 'null'], enum: [RESERVED, REJECTED, null] }
+        paymentStatus: { type: [string, 'null'], enum: [AUTHORIZED, DECLINED, null] }
+        createdAt: { type: string, format: date-time }
+        self: { type: string, format: uri-reference }
+    ProblemDetail:
+      type: object
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        errors:
+          type: object
+          additionalProperties: { type: string }
+  responses:
+    Problem:
+      description: Request failed
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'

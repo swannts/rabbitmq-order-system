@@ -41,8 +41,14 @@ async function bootstrap() {
     transport: Transport.RMQ,
     options: {
       urls: [process.env.RABBITMQ_URL ?? 'amqp://learner:learner@localhost:5672'],
-      queue: 'inventory.commands',
-      queueOptions: { durable: true },
+      queue: 'inventory.commands.v1',
+      queueOptions: {
+        durable: true,
+        arguments: {
+          'x-dead-letter-exchange': 'orders.dlx',
+          'x-dead-letter-routing-key': 'orders.dead.v1',
+        },
+      },
       noAck: false,
       prefetchCount: 1,
     },

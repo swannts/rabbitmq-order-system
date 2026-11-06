@@ -14,8 +14,11 @@ export class Reservation {
   @Prop({ required: true, min: 1 })
   quantity!: number;
 
-  @Prop({ required: true, default: 'RECEIVED' })
-  status!: string;
+  @Prop({ required: true, enum: ['RESERVED', 'REJECTED'] })
+  status!: 'RESERVED' | 'REJECTED';
+
+  @Prop()
+  reason?: string;
 }
 
 export const ReservationSchema = SchemaFactory.createForClass(Reservation);

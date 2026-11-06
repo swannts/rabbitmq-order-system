@@ -1,0 +1,44 @@
+openapi: 3.1.0
+info:
+  title: Inventory Service API
+  version: 1.0.0
+servers:
+  - url: http://localhost:3000
+paths:
+  /api/v1/inventory/items/{itemName}:
+    parameters:
+      - name: itemName
+        in: path
+        required: true
+        schema: { type: string, maxLength: 160 }
+    get:
+      operationId: getInventoryItem
+      responses:
+        '200': { description: Current available quantity }
+        '404': { description: Item is not registered }
+    put:
+      operationId: setAvailableStock
+      summary: Set the available quantity for an item
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [available]
+              properties:
+                available: { type: integer, minimum: 0 }
+      responses:
+        '200': { description: Updated stock item }
+        '400': { description: Invalid quantity }
+  /api/v1/inventory/reservations/{orderId}:
+    get:
+      operationId: getReservation
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Reservation state }
+        '404': { description: Reservation not found }

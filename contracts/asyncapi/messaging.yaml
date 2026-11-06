@@ -1,0 +1,127 @@
+asyncapi: 2.6.0
+info:
+  title: Order Platform Messaging
+  version: 1.0.0
+  description: Versioned command and event contracts for the order workflow.
+defaultContentType: application/json
+servers:
+  rabbitmq:
+    url: rabbitmq:5672
+    protocol: amqp
+  kafka:
+    url: kafka:9092
+    protocol: kafka
+channels:
+  payments.commands.v1:
+    servers: [rabbitmq]
+    publish:
+      operationId: requestPaymentAuthorization
+      message:
+        $ref: '#/components/messages/PaymentAuthorizationCommand'
+  inventory.commands.v1:
+    servers: [rabbitmq]
+    publish:
+      operationId: requestInventoryReservation
+      message:
+        $ref: '#/components/messages/InventoryReservationCommand'
+  orders.outcomes.v1:
+    servers: [rabbitmq]
+    subscribe:
+      operationId: consumeWorkerOutcomes
+      message:
+        oneOf:
+          - $ref: '#/components/messages/PaymentAuthorizationOutcome'
+          - $ref: '#/components/messages/InventoryReservationOutcome'
+  order-events:
+    servers: [kafka]
+    publish:
+      operationId: publishOrderLifecycleEvent
+      message:
+        $ref: '#/components/messages/OrderLifecycleEvent'
+components:
+  messages:
+    PaymentAuthorizationCommand:
+      payload:
+        $ref: '#/components/schemas/PaymentCommandPacket'
+    InventoryReservationCommand:
+      payload:
+        $ref: '#/components/schemas/InventoryCommandPacket'
+    PaymentAuthorizationOutcome:
+      payload:
+        $ref: '#/components/schemas/PaymentOutcomePacket'
+    InventoryReservationOutcome:
+      payload:
+        $ref: '#/components/schemas/InventoryOutcomePacket'
+    OrderLifecycleEvent:
+      payload:
+        $ref: '#/components/schemas/OrderLifecycleEvent'
+  schemas:
+    CommandData:
+      type: object
+      required: [orderId, customerName, itemName, quantity, occurredAt]
+      properties:
+        eventType: { type: string, const: order.created }
+        schemaVersion: { type: integer, const: 1 }
+        eventId: { type: string, format: uuid }
+        orderId: { type: string, format: uuid }
+        customerName: { type: string }
+        itemName: { type: string }
+        quantity: { type: integer, minimum: 1 }
+        status: { type: string, const: PENDING }
+        occurredAt: { type: string, format: date-time }
+    PaymentCommandPacket:
+      type: object
+      required: [pattern, data]
+      properties:
+        pattern: { type: string, const: payments.authorize }
+        data: { $ref: '#/components/schemas/CommandData' }
+    InventoryCommandPacket:
+      type: object
+      required: [pattern, data]
+      properties:
+        pattern: { type: string, const: inventory.reserve }
+        data: { $ref: '#/components/schemas/CommandData' }
+    Outcome:
+      type: object
+      required: [orderId, status, occurredAt]
+      properties:
+        orderId: { type: string, format: uuid }
+        status: { type: string }
+        reason: { type: string }
+        occurredAt: { type: string, format: date-time }
+    PaymentOutcomePacket:
+      type: object
+      required: [pattern, data]
+      properties:
+        pattern: { type: string, const: orders.payment-result }
+        data:
+          allOf:
+            - $ref: '#/components/schemas/Outcome'
+            - properties:
+                status: { type: string, enum: [AUTHORIZED, DECLINED] }
+                paymentId: { type: string, format: uuid }
+    InventoryOutcomePacket:
+      type: object
+      required: [pattern, data]
+      properties:
+        pattern: { type: string, const: orders.inventory-result }
+        data:
+          allOf:
+            - $ref: '#/components/schemas/Outcome'
+            - properties:
+                status: { type: string, enum: [RESERVED, REJECTED] }
+                itemName: { type: string }
+                quantity: { type: integer }
+    OrderLifecycleEvent:
+      type: object
+      required: [eventType, schemaVersion, eventId, orderId, itemName, quantity, status, occurredAt]
+      properties:
+        eventType: { type: string, enum: [order.created, order.confirmed, order.rejected] }
+        schemaVersion: { type: integer, const: 1 }
+        eventId: { type: string, format: uuid }
+        orderId: { type: string, format: uuid }
+        customerName: { type: string }
+        itemName: { type: string }
+        quantity: { type: integer, minimum: 1 }
+        status: { type: string, enum: [PENDING, CONFIRMED, REJECTED] }
+        occurredAt: { type: string, format: date-time }

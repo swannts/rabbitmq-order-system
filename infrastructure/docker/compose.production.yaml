@@ -41,13 +41,31 @@ services:
       RABBITMQ_USER: ${RABBITMQ_USERNAME:?Set RABBITMQ_USERNAME}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD}
       RABBITMQ_SCHEME: amqps
+
+  payment-api:
+    image: ${PAYMENT_SERVICE_IMAGE:?Set PAYMENT_SERVICE_IMAGE to a versioned image}
+    init: true
+    restart: unless-stopped
+    command: ["php", "artisan", "serve", "--host=0.0.0.0", "--port=8000"]
+    expose:
+      - "8000"
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      APP_KEY: ${PAYMENT_APP_KEY:?Set PAYMENT_APP_KEY}
+      DB_CONNECTION: mysql
+      DB_HOST: ${PAYMENT_DATABASE_HOST:?Set PAYMENT_DATABASE_HOST}
+      DB_PORT: ${PAYMENT_DATABASE_PORT:-3306}
+      DB_DATABASE: ${PAYMENT_DATABASE_NAME:?Set PAYMENT_DATABASE_NAME}
+      DB_USERNAME: ${PAYMENT_DATABASE_USER:?Set PAYMENT_DATABASE_USER}
+      DB_PASSWORD: ${PAYMENT_DATABASE_PASSWORD:?Set PAYMENT_DATABASE_PASSWORD}
   inventory-service:
     image: ${INVENTORY_SERVICE_IMAGE:?Set INVENTORY_SERVICE_IMAGE to a versioned image}
     init: true
     restart: unless-stopped
     environment:
       NODE_ENV: production
-      MONGODB_URI: ${INVENTORY_MONGODB_URI:?Set INVENTORY_MONGODB_URI}
+      MONGODB_URI: ${INVENTORY_MONGODB_URI:?Set INVENTORY_MONGODB_URI with replica-set support}
       RABBITMQ_URL: ${RABBITMQ_URL:?Set RABBITMQ_URL using amqps}
     expose:
       - "3000"

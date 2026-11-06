@@ -4,10 +4,13 @@ namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
+use App\Services\PaymentProcessor;
 use PhpAmqpLib\Connection\AMQPSSLConnection;
 use PhpAmqpLib\Connection\AMQPStreamConnection;
 use PhpAmqpLib\Message\AMQPMessage;
+use PhpAmqpLib\Wire\AMQPTable;
 use Throwable;
+use InvalidArgumentException;
 
 class ConsumePayments extends Command
 {
@@ -26,24 +29,25 @@ class ConsumePayments extends Command
             : new AMQPStreamConnection($config['host'], $config['port'], $config['user'], $config['password'], $config['vhost']);
 
         $channel = $connection->channel();
-        $channel->queue_declare($config['queue'], false, true, false, false);
+        $channel->queue_declare($config['queue'], false, true, false, false, false, new AMQPTable([
+            'x-dead-letter-exchange' => 'orders.dlx',
+            'x-dead-letter-routing-key' => 'orders.dead.v1',
+        ]));
         $channel->basic_qos(null, 1, null);
+        $processor = app(PaymentProcessor::class);
         $this->info("Waiting for payment commands on {$config['queue']}...");
 
-        $channel->basic_consume($config['queue'], '', false, false, false, false, function (AMQPMessage $message): void {
+        $channel->basic_consume($config['queue'], '', false, false, false, false, function (AMQPMessage $message) use ($processor): void {
             try {
                 $packet = json_decode($message->getBody(), true, 512, JSON_THROW_ON_ERROR);
                 $command = $packet['data'] ?? $packet;
 
-                // Replace this demo acknowledgement with real payment authorization logic.
-                Log::info('Payment command received', [
-                    'pattern' => $packet['pattern'] ?? 'payments.authorize',
-                    'orderId' => $command['orderId'] ?? null,
-                ]);
+                $processor->authorize($command);
+                Log::info('Payment authorization processed', ['orderId' => $command['orderId'] ?? null]);
                 $message->ack();
             } catch (Throwable $exception) {
                 Log::error('Payment command could not be processed', ['error' => $exception->getMessage()]);
-                $message->nack(false, false);
+                $message->nack(false, ! ($exception instanceof InvalidArgumentException));
             }
         });
 

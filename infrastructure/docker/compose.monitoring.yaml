@@ -70,10 +70,12 @@ services:
 
   mongodb-exporter:
     image: percona/mongodb_exporter:0.53.0
-    command: ["--mongodb.uri=mongodb://metrics_exporter:metrics_dev@inventory-db:27017/admin?authSource=admin", "--collect-all"]
+    command: ["--mongodb.uri=mongodb://metrics_exporter:metrics_dev@inventory-db:27017/admin?authSource=admin&replicaSet=rs0", "--collect-all"]
     depends_on:
       inventory-db:
         condition: service_healthy
+      inventory-db-init:
+        condition: service_completed_successfully
 
   kafka-exporter:
     image: danielqsj/kafka-exporter:v1.10.0

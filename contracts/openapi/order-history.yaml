@@ -1,0 +1,42 @@
+openapi: 3.1.0
+info:
+  title: Order History API
+  version: 1.0.0
+servers:
+  - url: http://localhost:8081
+paths:
+  /api/v1/order-history:
+    get:
+      operationId: searchOrderHistory
+      parameters:
+        - name: orderId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: from
+          in: query
+          description: RFC3339 inclusive lower timestamp bound
+          schema: { type: string, format: date-time }
+        - name: until
+          in: query
+          description: RFC3339 inclusive upper timestamp bound
+          schema: { type: string, format: date-time }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+        - name: offset
+          in: query
+          schema: { type: integer, minimum: 0, default: 0 }
+      responses:
+        '200': { description: Matching lifecycle events }
+        '400': { description: Invalid filter }
+  /api/v1/order-history/{orderId}:
+    get:
+      operationId: getOrderHistory
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Lifecycle events ordered by occurrence time }
+        '404': { description: No history for this order }

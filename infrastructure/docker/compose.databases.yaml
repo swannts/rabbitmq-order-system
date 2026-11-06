@@ -39,8 +39,11 @@ services:
       retries: 20
 
   inventory-db:
-    image: mongo:8.0.32
+    build:
+      context: ./mongodb
+      dockerfile: Dockerfile
     restart: unless-stopped
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all", "--keyFile", "/etc/mongo-keyfile"]
     environment:
       MONGO_INITDB_DATABASE: inventory
       MONGO_INITDB_ROOT_USERNAME: inventory_admin
@@ -55,6 +58,23 @@ services:
       interval: 10s
       timeout: 5s
       retries: 20
+
+  inventory-db-init:
+    image: mongo:8.0.32
+    depends_on:
+      inventory-db:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        mongosh "mongodb://inventory_admin:inventory_dev@inventory-db:27017/admin?authSource=admin" --quiet --eval 'try { rs.status() } catch (e) { rs.initiate({_id:"rs0",members:[{_id:0,host:"inventory-db:27017"}]}) }'
+        i=0
+        until mongosh "mongodb://inventory_admin:inventory_dev@inventory-db:27017/admin?authSource=admin&replicaSet=rs0" --quiet --eval 'db.hello().isWritablePrimary' | grep true; do
+          i=$$((i + 1))
+          test "$$i" -lt 30
+          sleep 1
+        done
+    restart: "no"
 
   history-db:
     image: clickhouse/clickhouse-server:26.8.36

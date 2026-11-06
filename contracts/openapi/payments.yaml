@@ -1,0 +1,18 @@
+openapi: 3.1.0
+info:
+  title: Payment Service API
+  version: 1.0.0
+servers:
+  - url: http://localhost:8002
+paths:
+  /api/v1/payments/{orderId}:
+    get:
+      operationId: getPaymentForOrder
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Payment authorization record }
+        '404': { description: Payment not found }
