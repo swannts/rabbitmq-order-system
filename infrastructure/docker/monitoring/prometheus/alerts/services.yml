@@ -1,0 +1,47 @@
+groups:
+  - name: service-availability
+    rules:
+      - alert: ServiceMetricsTargetDown
+        expr: up{job=~"order-service|inventory-service|order-history-service|rabbitmq|postgres|mysql|mongodb|kafka|clickhouse"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.job }} metrics target is down"
+          description: "Prometheus cannot scrape {{ $labels.instance }} for at least two minutes."
+
+      - alert: ServiceHealthProbeFailed
+        expr: probe_success{job=~"service-probes|rabbitmq-probe"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Health probe failed for {{ $labels.instance }}"
+          description: "The service or broker health check has failed for at least one minute."
+
+      - alert: ContainerMemoryNearLimit
+        expr: (container_memory_working_set_bytes{container!="",image!=""} / container_spec_memory_limit_bytes{container!="",image!=""}) > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} is near its memory limit"
+          description: "Memory usage has exceeded 90 percent of the configured limit for five minutes."
+
+      - alert: KafkaConsumerLagHigh
+        expr: kafka_consumergroup_lag > 1000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Kafka consumer {{ $labels.consumergroup }} is lagging"
+          description: "Consumer group {{ $labels.consumergroup }} is more than 1000 messages behind on {{ $labels.topic }}."
+
+      - alert: RabbitMQQueueBacklog
+        expr: (sum(rabbitmq_detailed_queue_messages_ready) or sum(rabbitmq_queue_messages_ready)) > 1000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "RabbitMQ has a large ready-message backlog"
+          description: "More than 1000 messages have remained ready across queues for five minutes."

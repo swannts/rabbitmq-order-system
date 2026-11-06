@@ -32,6 +32,18 @@ docker compose -p order-platform-local --profile apps \
   -f infrastructure/docker/compose.services.yaml up --build -d
 ```
 
+The monitoring stack is a separate Compose layer. Include it when starting the full stack or bring it up independently with the same project name and Compose network:
+
+```bash
+docker compose -p order-platform-local --profile apps \
+  -f infrastructure/docker/compose.messaging.yaml \
+  -f infrastructure/docker/compose.databases.yaml \
+  -f infrastructure/docker/compose.services.yaml \
+  -f infrastructure/docker/compose.monitoring.yaml up --build -d
+```
+
+Grafana is exposed at `localhost:3001`, Prometheus at `localhost:9090`, Alertmanager at `localhost:9093`, and the local Mailpit alert inbox at `localhost:8025`. Set `GRAFANA_ADMIN_PASSWORD` before startup to replace the local default. Prometheus collects application, RabbitMQ, Kafka, PostgreSQL, MySQL, MongoDB, ClickHouse, and container metrics. The provisioned Grafana dashboard shows service availability, request rates, RabbitMQ backlog, Kafka consumer lag, order-history processing, database target health, and container memory. Alertmanager sends local email notifications to Mailpit. The Laravel worker has no standalone metrics endpoint yet; its process/container state and RabbitMQ broker metrics are collected.
+
 Stop only brokers and databases while preserving local data:
 
 ```bash

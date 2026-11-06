@@ -1,0 +1,95 @@
+name: order-platform-local
+
+services:
+  prometheus:
+    image: prom/prometheus:v3.15.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --web.enable-lifecycle
+    volumes:
+      - ./monitoring/prometheus:/etc/prometheus:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    depends_on:
+      - alertmanager
+      - blackbox-exporter
+
+  alertmanager:
+    image: prom/alertmanager:v0.34.1
+    command: ["--config.file=/etc/alertmanager/alertmanager.yml", "--storage.path=/alertmanager"]
+    volumes:
+      - ./monitoring/alertmanager:/etc/alertmanager:ro
+      - alertmanager_data:/alertmanager
+    ports:
+      - "127.0.0.1:9093:9093"
+    depends_on:
+      - mailpit
+
+  grafana:
+    image: grafana/grafana:13.3.0
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "127.0.0.1:3001:3000"
+    depends_on:
+      - prometheus
+
+  blackbox-exporter:
+    image: quay.io/prometheus/blackbox-exporter:v0.29.1
+    command: ["--config.file=/etc/blackbox/blackbox.yml"]
+    volumes:
+      - ./monitoring/blackbox:/etc/blackbox:ro
+
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.18.1
+    environment:
+      DATA_SOURCE_URI: order-db:5432/orders?sslmode=disable
+      DATA_SOURCE_USER: metrics_exporter
+      DATA_SOURCE_PASS: metrics_dev
+
+  mysqld-exporter:
+    image: prom/mysqld-exporter:v0.21.0
+    command: ["--mysqld.address=payment-db:3306", "--mysqld.username=metrics_exporter"]
+    environment:
+      MYSQLD_EXPORTER_PASSWORD: metrics_dev
+
+  mongodb-exporter:
+    image: percona/mongodb_exporter:0.53.0
+    command: ["--mongodb.uri=mongodb://metrics_exporter:metrics_dev@inventory-db:27017/admin?authSource=admin", "--collect-all"]
+
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:v1.10.0
+    command: ["--kafka.server=kafka:9092", "--group.filter=.*"]
+
+  cadvisor:
+    image: ghcr.io/google/cadvisor:v0.60.6
+    privileged: true
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+    expose:
+      - "8080"
+
+  mailpit:
+    image: axllent/mailpit:v1.27.8
+    ports:
+      - "127.0.0.1:8025:8025"
+
+volumes:
+  prometheus_data:
+  alertmanager_data:
+  grafana_data:

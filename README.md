@@ -34,7 +34,19 @@ docker compose -p order-platform-local --profile apps \
   -f infrastructure/docker/compose.services.yaml up --build -d
 ```
 
-The order API accepts `POST /api/orders` on port `8080`; the inventory and history services expose health endpoints on ports `3000` and `8081`. The payment container runs a RabbitMQ worker.
+Start the local monitoring stack in a separate Compose layer:
+
+```bash
+docker compose -p order-platform-local --profile apps \
+  -f infrastructure/docker/compose.messaging.yaml \
+  -f infrastructure/docker/compose.databases.yaml \
+  -f infrastructure/docker/compose.services.yaml \
+  -f infrastructure/docker/compose.monitoring.yaml up --build -d
+```
+
+Grafana is at <http://localhost:3001> (`admin` / `admin` by default; set `GRAFANA_ADMIN_PASSWORD` to change it). Prometheus is at <http://localhost:9090>, Alertmanager at <http://localhost:9093>, and the local alert email inbox at <http://localhost:8025>. Prometheus scrapes the application metrics and RabbitMQ, probes service readiness, and collects container resource usage through cAdvisor. Alerts cover failed scrape/health checks and containers nearing memory limits.
+
+The order API accepts `POST /api/orders` on port `8080`; the inventory and history services expose health endpoints on ports `3000` and `8081`. The payment container runs a RabbitMQ worker. Prometheus metrics are exposed at `/actuator/prometheus` by Order and `/metrics` by Inventory and Order History. Payment worker liveness is observed through RabbitMQ and container health/resource metrics.
 
 ## Current starter behavior
 

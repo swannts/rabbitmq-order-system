@@ -1,0 +1,72 @@
+{
+  "title": "Order Platform Overview",
+  "uid": "order-platform-overview",
+  "schemaVersion": 41,
+  "version": 1,
+  "refresh": "15s",
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Service and broker scrape targets up",
+      "gridPos": { "h": 5, "w": 8, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "sum(up{job=~\"order-service|inventory-service|order-history-service|rabbitmq\"})", "legendFormat": "Up" }]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "HTTP request rate",
+      "gridPos": { "h": 8, "w": 16, "x": 8, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "sum by (application, uri) (rate(http_server_requests_seconds_count{application=\"order-service\"}[5m]))", "legendFormat": "order {{application}} {{uri}}" },
+        { "expr": "sum by (method, status_code) (rate(http_requests_total{service=\"inventory-service\"}[5m]))", "legendFormat": "inventory {{method}} {{status_code}}" }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "RabbitMQ ready messages",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "sum(rabbitmq_detailed_queue_messages_ready) or sum(rabbitmq_queue_messages_ready)", "legendFormat": "Ready" }]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Order history consumer",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "rate(order_history_events_processed_total[5m])", "legendFormat": "Events stored/s" },
+        { "expr": "rate(order_history_event_failures_total[5m])", "legendFormat": "Processing errors/s" }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Container memory working set",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "sum by (name) (container_memory_working_set_bytes{container!=\"\"})", "legendFormat": "{{name}}" }]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Kafka consumer lag",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "sum by (consumergroup, topic) (kafka_consumergroup_lag)", "legendFormat": "{{consumergroup}} / {{topic}}" }]
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Database scrape targets up",
+      "gridPos": { "h": 5, "w": 12, "x": 12, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "sum(up{job=~\"postgres|mysql|mongodb|clickhouse\"})", "legendFormat": "Up" }]
+    }
+  ]
+}

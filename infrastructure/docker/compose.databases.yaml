@@ -12,6 +12,7 @@ services:
       - "127.0.0.1:5433:5432"
     volumes:
       - order_db_data:/var/lib/postgresql
+      - ./monitoring/postgres/monitoring-user.sql:/docker-entrypoint-initdb.d/10-monitoring-user.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 5s
@@ -30,6 +31,7 @@ services:
       - "127.0.0.1:3306:3306"
     volumes:
       - payment_db_data:/var/lib/mysql
+      - ./monitoring/mysql/monitoring-user.sql:/docker-entrypoint-initdb.d/10-monitoring-user.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p\"$${MYSQL_ROOT_PASSWORD}\" --silent"]
       interval: 5s
@@ -47,6 +49,7 @@ services:
       - "127.0.0.1:27017:27017"
     volumes:
       - inventory_db_data:/data/db
+      - ./monitoring/mongodb/monitoring-user.js:/docker-entrypoint-initdb.d/10-monitoring-user.js:ro
     healthcheck:
       test: ["CMD-SHELL", "mongosh --quiet --eval 'db.adminCommand(\"ping\").ok' | grep 1"]
       interval: 10s
@@ -67,6 +70,7 @@ services:
     volumes:
       - history_db_data:/var/lib/clickhouse
       - history_db_logs:/var/log/clickhouse-server
+      - ./monitoring/clickhouse/prometheus.xml:/etc/clickhouse-server/config.d/prometheus.xml:ro
     healthcheck:
       test: ["CMD-SHELL", "clickhouse-client --query 'SELECT 1' --user \"$${CLICKHOUSE_USER}\" --password \"$${CLICKHOUSE_PASSWORD}\" | grep 1"]
       interval: 10s

@@ -6,12 +6,14 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -27,6 +29,10 @@ type OrderCreatedEvent struct {
 	Quantity     uint32    `json:"quantity"`
 	CreatedAt    time.Time `json:"createdAt"`
 }
+
+var httpRequests atomic.Uint64
+var orderEventsProcessed atomic.Uint64
+var orderEventFailures atomic.Uint64
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
@@ -68,8 +74,12 @@ func main() {
 		}
 		w.WriteHeader(http.StatusNoContent)
 	})
+	mux.HandleFunc("GET /metrics", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+		_, _ = fmt.Fprintf(w, "# HELP order_history_http_requests_total Total HTTP requests handled.\n# TYPE order_history_http_requests_total counter\norder_history_http_requests_total %d\n# HELP order_history_events_processed_total Kafka order events stored in ClickHouse.\n# TYPE order_history_events_processed_total counter\norder_history_events_processed_total %d\n# HELP order_history_event_failures_total Kafka order events that failed processing.\n# TYPE order_history_event_failures_total counter\norder_history_event_failures_total %d\n", httpRequests.Load(), orderEventsProcessed.Load(), orderEventFailures.Load())
+	})
 
-	server := &http.Server{Addr: ":8081", Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	server := &http.Server{Addr: ":8081", Handler: countRequests(mux), ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -149,11 +159,13 @@ func consumeOrders(ctx context.Context, logger *slog.Logger, consumer *kgo.Clien
 	for ctx.Err() == nil {
 		fetches := consumer.PollFetches(ctx)
 		fetches.EachError(func(topic string, partition int32, err error) {
+			orderEventFailures.Add(1)
 			logger.Error("Kafka fetch failed", "topic", topic, "partition", partition, "error", err)
 		})
 		fetches.EachRecord(func(record *kgo.Record) {
 			var event OrderCreatedEvent
 			if err := json.Unmarshal(record.Value, &event); err != nil {
+				orderEventFailures.Add(1)
 				logger.Error("invalid order event", "error", err, "offset", record.Offset)
 				return
 			}
@@ -161,16 +173,26 @@ func consumeOrders(ctx context.Context, logger *slog.Logger, consumer *kgo.Clien
 				"INSERT INTO order_events (order_id, customer_name, item_name, quantity, created_at) VALUES (?, ?, ?, ?, ?)",
 				event.OrderID, event.CustomerName, event.ItemName, event.Quantity, event.CreatedAt,
 			); err != nil {
+				orderEventFailures.Add(1)
 				logger.Error("persist order event", "error", err, "order_id", event.OrderID)
 				return
 			}
 			if err := consumer.CommitRecords(ctx, record); err != nil {
+				orderEventFailures.Add(1)
 				logger.Error("commit Kafka offset", "error", err, "offset", record.Offset)
 				return
 			}
 			logger.Info("stored order event", "order_id", event.OrderID, "offset", record.Offset)
+			orderEventsProcessed.Add(1)
 		})
 	}
+}
+
+func countRequests(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		httpRequests.Add(1)
+		next.ServeHTTP(w, r)
+	})
 }
 
 func env(key, fallback string) string {
