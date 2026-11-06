@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { MicroserviceOptions, Transport } from '@nestjs/microservices';
 import * as metricsClient from '@prometheus-io/client';
+import type { NextFunction, Request, Response } from 'express';
 import { AppModule } from './app.module.js';
 
 async function bootstrap() {
@@ -21,7 +22,7 @@ async function bootstrap() {
     buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5],
     registers: [metrics],
   });
-  app.use((req, res, next) => {
+  app.use((req: Request, res: Response, next: NextFunction) => {
     if (req.path === '/metrics') return next();
     const end = latency.startTimer();
     res.on('finish', () => {
@@ -31,7 +32,7 @@ async function bootstrap() {
     });
     next();
   });
-  app.use('/metrics', async (_req, res) => {
+  app.use('/metrics', async (_req: Request, res: Response) => {
     res.setHeader('Content-Type', metrics.contentType);
     res.end(await metrics.metrics());
   });

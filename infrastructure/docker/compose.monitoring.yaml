@@ -55,20 +55,32 @@ services:
       DATA_SOURCE_URI: order-db:5432/orders?sslmode=disable
       DATA_SOURCE_USER: metrics_exporter
       DATA_SOURCE_PASS: metrics_dev
+    depends_on:
+      order-db:
+        condition: service_healthy
 
   mysqld-exporter:
     image: prom/mysqld-exporter:v0.21.0
     command: ["--mysqld.address=payment-db:3306", "--mysqld.username=metrics_exporter"]
     environment:
       MYSQLD_EXPORTER_PASSWORD: metrics_dev
+    depends_on:
+      payment-db:
+        condition: service_healthy
 
   mongodb-exporter:
     image: percona/mongodb_exporter:0.53.0
     command: ["--mongodb.uri=mongodb://metrics_exporter:metrics_dev@inventory-db:27017/admin?authSource=admin", "--collect-all"]
+    depends_on:
+      inventory-db:
+        condition: service_healthy
 
   kafka-exporter:
     image: danielqsj/kafka-exporter:v1.10.0
     command: ["--kafka.server=kafka:9092", "--group.filter=.*"]
+    depends_on:
+      kafka:
+        condition: service_healthy
 
   cadvisor:
     image: ghcr.io/google/cadvisor:v0.60.6

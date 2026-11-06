@@ -1,7 +1,7 @@
 import { Controller, Logger } from '@nestjs/common';
 import { EventPattern, Payload } from '@nestjs/microservices';
 import { InventoryService } from './inventory.service.js';
-import { ReserveInventoryCommand } from './reserve-inventory.command.js';
+import type { ReserveInventoryCommand } from './reserve-inventory.command.js';
 
 @Controller()
 export class InventoryController {
