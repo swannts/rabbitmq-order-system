@@ -1,7 +1,7 @@
 package com.swann.rabbitmq.service;
 
 import com.swann.rabbitmq.config.RabbitMqConfig;
-import com.swann.rabbitmq.model.OrderMessage;
+import com.swann.rabbitmq.model.dto.OrderMessage;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import org.slf4j.Logger;
